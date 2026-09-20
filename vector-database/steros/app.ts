@@ -118,3 +118,57 @@ function processInput(input: string): Attempt {
     gameState.addAttempt(input, match);
     return gameState.attempts[gameState.attempts.length - 1];
 }
+
+// --- DOM Manipulation ---
+
+document.addEventListener("DOMContentLoaded", () => {
+    const inputEl = document.getElementById("situation-input") as HTMLInputElement;
+    const addBtn = document.getElementById("add-btn") as HTMLButtonElement;
+    const resetBtn = document.getElementById("reset-btn") as HTMLButtonElement;
+    const scoreEl = document.getElementById("total-score") as HTMLSpanElement;
+    const historyListEl = document.getElementById("history-list") as HTMLUListElement;
+
+    function renderState() {
+        scoreEl.textContent = gameState.score.toString();
+        
+        historyListEl.innerHTML = "";
+        
+        // Render from newest to oldest for better UX
+        const reversedAttempts = [...gameState.attempts].reverse();
+        
+        reversedAttempts.forEach(attempt => {
+            const li = document.createElement("li");
+            if (attempt.matchedSituation) {
+                li.innerHTML = `<span class="match">${attempt.matchedSituation.name}</span>
+                                <span>+${attempt.pointsAwarded} pkt</span>`;
+            } else {
+                li.innerHTML = `<span class="no-match">${attempt.input}</span>
+                                <span class="no-match">❌</span>`;
+            }
+            historyListEl.appendChild(li);
+        });
+    }
+
+    function handleAdd() {
+        const text = inputEl.value;
+        if (!text.trim()) return;
+        
+        processInput(text);
+        inputEl.value = "";
+        renderState();
+    }
+
+    addBtn.addEventListener("click", handleAdd);
+
+    inputEl.addEventListener("keypress", (e) => {
+        if (e.key === "Enter") {
+            handleAdd();
+        }
+    });
+
+    resetBtn.addEventListener("click", () => {
+        gameState.reset();
+        renderState();
+        inputEl.focus();
+    });
+});

@@ -40,7 +40,7 @@ To make the game user-friendly while strictly adhering to the rules:
 - [x] **Repository Setup**: Create `index.html`, `style.css`, and `app.ts` in the project folder.
 - [x] **Data Preparation**: Copy the situations from `GOAL.md` and format them into the TypeScript array.
 - [x] **Core Logic Implementation**: Write the TypeScript logic to handle the state (current score, list of attempts) and the matching algorithm.
-- [ ] **DOM Manipulation**: Wire the input and buttons to the TypeScript logic so that the DOM updates dynamically when a user submits an entry.
-- [ ] **Styling**: Apply CSS to make the UI clean and responsive.
-- [ ] **Compilation**: Run `tsc` to compile `app.ts` to `app.js`.
+- [x] **DOM Manipulation**: Wire the input and buttons to the TypeScript logic so that the DOM updates dynamically when a user submits an entry.
+- [x] **Styling**: Apply CSS to make the UI clean and responsive.
+- [x] **Compilation**: Run `tsc` to compile `app.ts` to `app.js`.
 - [ ] **Manual Testing**: Open `index.html` in a web browser (without a local server) to verify that the game functions correctly offline.
