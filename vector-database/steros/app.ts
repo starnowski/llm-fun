@@ -1,3 +1,7 @@
+import { pipeline } from '@xenova/transformers';
+import { createRxDatabase } from 'rxdb';
+import { getRxStorageDexie } from 'rxdb/plugins/storage-dexie';
+
 interface Situation {
     id: number;
     name: string;
@@ -50,6 +54,82 @@ const situations: Situation[] = [
     { id: 43, name: "Urlop / wakacje", points: 13 }
 ];
 
+// --- Database & AI Setup (Step 2) ---
+
+export let db: any;
+export let extractor: any;
+
+async function initDB() {
+    db = await createRxDatabase({
+        name: 'sterosdb',
+        storage: getRxStorageDexie()
+    });
+
+    await db.addCollections({
+        situations: {
+            schema: {
+                version: 0,
+                primaryKey: 'id',
+                type: 'object',
+                properties: {
+                    id: { type: 'string', maxLength: 100 },
+                    name: { type: 'string' },
+                    points: { type: 'number' },
+                    embedding: {
+                        type: 'array',
+                        items: { type: 'number' }
+                    }
+                },
+                required: ['id', 'name', 'points', 'embedding']
+            }
+        }
+    });
+
+    return db;
+}
+
+async function initializeApp(statusEl: HTMLElement, inputEl: HTMLInputElement, addBtn: HTMLButtonElement) {
+    if (statusEl) statusEl.textContent = 'Trwa ładowanie modelu AI (Transformers.js)...';
+
+    // 1. Load the model
+    // Using a fast, small multilingual model
+    extractor = await pipeline('feature-extraction', 'Xenova/paraphrase-multilingual-MiniLM-L12-v2', {
+        quantized: true,
+    });
+
+    if (statusEl) statusEl.textContent = 'Inicjalizacja lokalnej bazy danych (RxDB)...';
+
+    // 2. Load RxDB
+    await initDB();
+
+    // 3. Populate Database if empty
+    const existingCount = await db.situations.find().exec();
+    if (existingCount.length === 0) {
+        if (statusEl) statusEl.textContent = 'Generowanie wektorów dla sytuacji stresowych...';
+        
+        for (const sit of situations) {
+            const output = await extractor(sit.name, { pooling: 'mean', normalize: true });
+            const embedding = Array.from(output.data);
+            
+            await db.situations.insert({
+                id: sit.id.toString(),
+                name: sit.name,
+                points: sit.points,
+                embedding: embedding
+            });
+        }
+    }
+
+    if (statusEl) {
+        statusEl.textContent = 'Wszystkie sytuacje zostały zapisane w bazie danych!';
+        statusEl.style.color = '#28a745';
+    }
+    
+    // Enable inputs
+    if (inputEl) inputEl.disabled = false;
+    if (addBtn) addBtn.disabled = false;
+}
+
 // --- Core Logic ---
 
 interface Attempt {
@@ -65,9 +145,6 @@ class GameState {
 
     public addAttempt(input: string, situation?: Situation) {
         if (situation) {
-            // If already matched, we still record the attempt but maybe award 0 points to prevent spam?
-            // For simplicity, we just award points every time they match, as the goal didn't specify.
-            // Let's only award points if not already matched to make it a better game.
             let points = 0;
             if (!this.matchedIds.has(situation.id)) {
                 points = situation.points;
@@ -90,31 +167,19 @@ class GameState {
 const gameState = new GameState();
 
 // Utility function to normalize strings for comparison (lowercase + remove diacritics)
+// Will be removed in Step 4, keeping for now
 function normalizeString(str: string): string {
     return str
         .trim()
         .toLowerCase()
-        // Replace polish diacritics for easier matching
-        .replace(/ą/g, 'a')
-        .replace(/ć/g, 'c')
-        .replace(/ę/g, 'e')
-        .replace(/ł/g, 'l')
-        .replace(/ń/g, 'n')
-        .replace(/ó/g, 'o')
-        .replace(/ś/g, 's')
-        .replace(/ź/g, 'z')
-        .replace(/ż/g, 'z')
-        // Remove spaces and non-alphanumeric characters for even more robust matching
-        // so "urlop / wakacje" matches "urlopwakacje" and "urlop wakacje"
+        .replace(/ą/g, 'a').replace(/ć/g, 'c').replace(/ę/g, 'e').replace(/ł/g, 'l')
+        .replace(/ń/g, 'n').replace(/ó/g, 'o').replace(/ś/g, 's').replace(/ź/g, 'z').replace(/ż/g, 'z')
         .replace(/[^\w]/gi, '');
 }
 
 function processInput(input: string): Attempt {
     const normalizedInput = normalizeString(input);
-    
-    // Find a match
     const match = situations.find(s => normalizeString(s.name) === normalizedInput);
-    
     gameState.addAttempt(input, match);
     return gameState.attempts[gameState.attempts.length - 1];
 }
@@ -122,18 +187,20 @@ function processInput(input: string): Attempt {
 // --- DOM Manipulation ---
 
 document.addEventListener("DOMContentLoaded", () => {
+    const statusEl = document.getElementById("db-status") as HTMLElement;
     const inputEl = document.getElementById("situation-input") as HTMLInputElement;
     const addBtn = document.getElementById("add-btn") as HTMLButtonElement;
     const resetBtn = document.getElementById("reset-btn") as HTMLButtonElement;
     const scoreEl = document.getElementById("total-score") as HTMLSpanElement;
     const historyListEl = document.getElementById("history-list") as HTMLUListElement;
 
+    // Start initialization process immediately when DOM is ready
+    initializeApp(statusEl, inputEl, addBtn).catch(console.error);
+
     function renderState() {
         scoreEl.textContent = gameState.score.toString();
         
         historyListEl.innerHTML = "";
-        
-        // Render from newest to oldest for better UX
         const reversedAttempts = [...gameState.attempts].reverse();
         
         reversedAttempts.forEach(attempt => {

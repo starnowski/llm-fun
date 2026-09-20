@@ -14,7 +14,7 @@ The objective is to enhance the existing "Kalkulator Stresu" game by replacing t
   - Add a loading indicator or status text in the UI (e.g., `<div id="db-status">Loading AI Model...</div>`).
   - The game inputs should be disabled until the database is fully initialized.
 
-- [ ] **Step 2: Database & Model Initialization (Page Load)**
+- [x] **Step 2: Database & Model Initialization (Page Load)**
   - **Initialize Transformers.js**: Load the pipeline for feature extraction (`feature-extraction`).
   - **Initialize RxDB**: 
     - Create a local database instance.
