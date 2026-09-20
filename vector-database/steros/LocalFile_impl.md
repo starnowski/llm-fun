@@ -16,7 +16,7 @@ We will use **esbuild**, an extremely fast JavaScript bundler, to package `app.t
   - Update `index.html` to load a bundled file instead of the raw TypeScript file.
   - Change `<script type="module" src="/app.ts"></script>` to `<script src="bundle.js"></script>`.
 
-- [ ] **Step 2: Install esbuild**
+- [x] **Step 2: Install esbuild**
   - Run `npm install -D esbuild` to install the bundler.
   
 - [ ] **Step 3: Update `package.json` Build Scripts**
