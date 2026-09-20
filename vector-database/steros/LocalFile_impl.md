@@ -23,7 +23,7 @@ We will use **esbuild**, an extremely fast JavaScript bundler, to package `app.t
   - Add a build script to package the application.
   - `"build": "esbuild app.ts --bundle --outfile=bundle.js --format=iife"`
 
-- [ ] **Step 4: Bundle the Application**
+- [x] **Step 4: Bundle the Application**
   - Run `npm run build` to generate `bundle.js`.
 
 - [ ] **Step 5: Testing on `file://`**
