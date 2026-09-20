@@ -37,7 +37,7 @@ To make the game user-friendly while strictly adhering to the rules:
 5. **Reset Game**: A button to clear the board and start a new session.
 
 ## 6. Execution Steps
-- [ ] **Repository Setup**: Create `index.html`, `style.css`, and `app.ts` in the project folder.
+- [x] **Repository Setup**: Create `index.html`, `style.css`, and `app.ts` in the project folder.
 - [ ] **Data Preparation**: Copy the situations from `GOAL.md` and format them into the TypeScript array.
 - [ ] **Core Logic Implementation**: Write the TypeScript logic to handle the state (current score, list of attempts) and the matching algorithm.
 - [ ] **DOM Manipulation**: Wire the input and buttons to the TypeScript logic so that the DOM updates dynamically when a user submits an entry.
