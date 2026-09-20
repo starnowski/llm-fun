@@ -24,7 +24,7 @@ The objective is to enhance the existing "Kalkulator Stresu" game by replacing t
     - If empty, iterate through the `situations` array, generate the embedding vector for each, and insert the document into the RxDB collection.
   - **Notify User**: Once all embeddings are stored, update the UI to display: *"Wszystkie sytuacje zostały zapisane w bazie danych"* and enable the input fields.
 
-- [ ] **Step 3: Semantic Search Implementation**
+- [x] **Step 3: Semantic Search Implementation**
   - Modify the `processInput` function:
     - Generate the embedding vector for the user's input.
     - Query the RxDB collection using vector search capabilities (cosine similarity).
@@ -32,7 +32,7 @@ The objective is to enhance the existing "Kalkulator Stresu" game by replacing t
     - If above threshold, consider it a match, add points, and update the UI.
     - If below threshold, treat it as a miss (display `❌`).
 
-- [ ] **Step 4: Refactoring & Cleanup**
+- [x] **Step 4: Refactoring & Cleanup**
   - Remove the old `normalizeString` exact-matching logic.
   - Ensure all asynchronous operations are properly handled with `async/await` and that the UI remains responsive.
 

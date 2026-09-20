@@ -166,21 +166,52 @@ class GameState {
 
 const gameState = new GameState();
 
-// Utility function to normalize strings for comparison (lowercase + remove diacritics)
-// Will be removed in Step 4, keeping for now
-function normalizeString(str: string): string {
-    return str
-        .trim()
-        .toLowerCase()
-        .replace(/ą/g, 'a').replace(/ć/g, 'c').replace(/ę/g, 'e').replace(/ł/g, 'l')
-        .replace(/ń/g, 'n').replace(/ó/g, 'o').replace(/ś/g, 's').replace(/ź/g, 'z').replace(/ż/g, 'z')
-        .replace(/[^\w]/gi, '');
+
+function cosineSimilarity(a: number[], b: number[]): number {
+    let dotProduct = 0;
+    let normA = 0;
+    let normB = 0;
+    for (let i = 0; i < a.length; i++) {
+        dotProduct += a[i] * b[i];
+        normA += a[i] * a[i];
+        normB += b[i] * b[i];
+    }
+    if (normA === 0 || normB === 0) return 0;
+    return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
-function processInput(input: string): Attempt {
-    const normalizedInput = normalizeString(input);
-    const match = situations.find(s => normalizeString(s.name) === normalizedInput);
-    gameState.addAttempt(input, match);
+async function processInput(input: string): Promise<Attempt> {
+    // Generate embedding for user input
+    const output = await extractor(input, { pooling: 'mean', normalize: true });
+    const inputEmbedding = Array.from(output.data) as number[];
+
+    // Fetch all situations to perform similarity search
+    const docs = await db.situations.find().exec();
+    
+    let bestMatch = null;
+    let highestScore = -1;
+
+    for (const doc of docs) {
+        const score = cosineSimilarity(inputEmbedding, doc.embedding);
+        if (score > highestScore) {
+            highestScore = score;
+            bestMatch = doc;
+        }
+    }
+
+    const THRESHOLD = 0.85; // Similarity threshold
+
+    if (bestMatch && highestScore >= THRESHOLD) {
+        const matchedSituation: Situation = {
+            id: parseInt(bestMatch.id),
+            name: bestMatch.name,
+            points: bestMatch.points
+        };
+        gameState.addAttempt(input, matchedSituation);
+    } else {
+        gameState.addAttempt(input, undefined);
+    }
+
     return gameState.attempts[gameState.attempts.length - 1];
 }
 
@@ -216,12 +247,20 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    function handleAdd() {
+    async function handleAdd() {
         const text = inputEl.value;
         if (!text.trim()) return;
         
-        processInput(text);
+        inputEl.disabled = true;
+        addBtn.disabled = true;
+
+        await processInput(text);
+        
         inputEl.value = "";
+        inputEl.disabled = false;
+        addBtn.disabled = false;
+        inputEl.focus();
+        
         renderState();
     }
 
