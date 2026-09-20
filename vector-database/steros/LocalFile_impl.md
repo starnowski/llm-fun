@@ -26,7 +26,7 @@ We will use **esbuild**, an extremely fast JavaScript bundler, to package `app.t
 - [x] **Step 4: Bundle the Application**
   - Run `npm run build` to generate `bundle.js`.
 
-- [ ] **Step 5: Testing on `file://`**
+- [x] **Step 5: Testing on `file://`**
   - Open `index.html` directly in the browser via the file system to verify that the vector database and AI model initialize correctly without CORS errors.
 
 ## 4. Execution Details
