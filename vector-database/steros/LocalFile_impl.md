@@ -19,7 +19,7 @@ We will use **esbuild**, an extremely fast JavaScript bundler, to package `app.t
 - [x] **Step 2: Install esbuild**
   - Run `npm install -D esbuild` to install the bundler.
   
-- [ ] **Step 3: Update `package.json` Build Scripts**
+- [x] **Step 3: Update `package.json` Build Scripts**
   - Add a build script to package the application.
   - `"build": "esbuild app.ts --bundle --outfile=bundle.js --format=iife"`
 
