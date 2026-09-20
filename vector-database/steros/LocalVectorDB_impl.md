@@ -10,7 +10,7 @@ The objective is to enhance the existing "Kalkulator Stresu" game by replacing t
 
 ## 3. Implementation Steps
 
-- [ ] **Step 1: UI Updates for Loading State**
+- [x] **Step 1: UI Updates for Loading State**
   - Add a loading indicator or status text in the UI (e.g., `<div id="db-status">Loading AI Model...</div>`).
   - The game inputs should be disabled until the database is fully initialized.
 

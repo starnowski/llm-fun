@@ -12,10 +12,13 @@
         <div class="score-board">
             <h2>Suma punktów: <span id="total-score">0</span></h2>
         </div>
+        <div id="db-status" style="margin-bottom: 15px; color: #f39c12; font-weight: bold;">
+            Trwa ładowanie modelu AI i bazy danych...
+        </div>
         
         <div class="input-section">
-            <input type="text" id="situation-input" placeholder="Wpisz sytuację stresową..." autocomplete="off">
-            <button id="add-btn">Dodaj</button>
+            <input type="text" id="situation-input" placeholder="Wpisz sytuację stresową..." autocomplete="off" disabled>
+            <button id="add-btn" disabled>Dodaj</button>
         </div>
 
         <div class="history">
