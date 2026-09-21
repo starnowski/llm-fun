@@ -1,6 +1,7 @@
 import { pipeline } from '@xenova/transformers';
 import { createRxDatabase } from 'rxdb';
 import { getRxStorageDexie } from 'rxdb/plugins/storage-dexie';
+import { Document } from 'flexsearch';
 
 interface Situation {
     id: number;
@@ -58,6 +59,7 @@ const situations: Situation[] = [
 
 export let db: any;
 export let extractor: any;
+export let flexSearch: any;
 
 async function initDB() {
     db = await createRxDatabase({
@@ -102,6 +104,14 @@ async function initializeApp(statusEl: HTMLElement, inputEl: HTMLInputElement, a
     // 2. Load RxDB
     await initDB();
 
+    flexSearch = new Document({
+        tokenize: 'forward',
+        document: {
+            id: 'id',
+            index: ['name']
+        }
+    });
+
     // 3. Populate Database if empty
     const existingCount = await db.situations.find().exec();
     if (existingCount.length === 0) {
@@ -118,6 +128,14 @@ async function initializeApp(statusEl: HTMLElement, inputEl: HTMLInputElement, a
                 embedding: embedding
             });
         }
+    }
+
+    if (statusEl) statusEl.textContent = 'Indeksowanie bazy full-text (FlexSearch)...';
+
+    // 4. Populate FlexSearch from RxDB documents
+    const allDocs = await db.situations.find().exec();
+    for (const doc of allDocs) {
+        flexSearch.add({ id: doc.id, name: doc.name });
     }
 
     if (statusEl) {
@@ -181,31 +199,52 @@ function cosineSimilarity(a: number[], b: number[]): number {
 }
 
 async function processInput(input: string): Promise<Attempt> {
-    // Generate embedding for user input
-    const output = await extractor(input, { pooling: 'mean', normalize: true });
-    const inputEmbedding = Array.from(output.data) as number[];
+    // 1. Full-text Search (Keyword Match)
+    const ftResults = flexSearch.search(input, 1);
+    let ftMatchedId = null;
+    if (ftResults.length > 0 && ftResults[0].result.length > 0) {
+        ftMatchedId = ftResults[0].result[0];
+    }
 
-    // Fetch all situations to perform similarity search
+    // Fetch all situations
     const docs = await db.situations.find().exec();
     
-    let bestMatch = null;
-    let highestScore = -1;
+    let matchedDoc = null;
 
-    for (const doc of docs) {
-        const score = cosineSimilarity(inputEmbedding, doc.embedding);
-        if (score > highestScore) {
-            highestScore = score;
-            bestMatch = doc;
+    if (ftMatchedId) {
+        // Prioritize exact/keyword match
+        matchedDoc = docs.find((d: any) => d.id === ftMatchedId);
+    }
+
+    // 2. Vector Search (Semantic Fallback)
+    if (!matchedDoc) {
+        // Generate embedding for user input
+        const output = await extractor(input, { pooling: 'mean', normalize: true });
+        const inputEmbedding = Array.from(output.data) as number[];
+
+        let bestMatch = null;
+        let highestScore = -1;
+
+        for (const doc of docs) {
+            const score = cosineSimilarity(inputEmbedding, doc.embedding);
+            if (score > highestScore) {
+                highestScore = score;
+                bestMatch = doc;
+            }
+        }
+
+        const THRESHOLD = 0.85; // Similarity threshold
+
+        if (bestMatch && highestScore >= THRESHOLD) {
+            matchedDoc = bestMatch;
         }
     }
 
-    const THRESHOLD = 0.85; // Similarity threshold
-
-    if (bestMatch && highestScore >= THRESHOLD) {
+    if (matchedDoc) {
         const matchedSituation: Situation = {
-            id: parseInt(bestMatch.id),
-            name: bestMatch.name,
-            points: bestMatch.points
+            id: parseInt(matchedDoc.id),
+            name: matchedDoc.name,
+            points: matchedDoc.points
         };
         gameState.addAttempt(input, matchedSituation);
     } else {
