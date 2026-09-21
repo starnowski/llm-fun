@@ -90,7 +90,7 @@ async function initDB() {
     return db;
 }
 
-async function initializeApp(statusEl: HTMLElement, inputEl: HTMLInputElement, addBtn: HTMLButtonElement) {
+async function initializeApp(statusEl: HTMLElement, inputEl: HTMLInputElement, addBtn: HTMLButtonElement, toggleEl?: HTMLInputElement) {
     if (statusEl) statusEl.textContent = 'Trwa ładowanie modelu AI (Transformers.js)...';
 
     // 1. Load the model
@@ -146,6 +146,7 @@ async function initializeApp(statusEl: HTMLElement, inputEl: HTMLInputElement, a
     // Enable inputs
     if (inputEl) inputEl.disabled = false;
     if (addBtn) addBtn.disabled = false;
+    if (toggleEl) toggleEl.disabled = false;
 }
 
 // --- Core Logic ---
@@ -263,9 +264,11 @@ document.addEventListener("DOMContentLoaded", () => {
     const resetBtn = document.getElementById("reset-btn") as HTMLButtonElement;
     const scoreEl = document.getElementById("total-score") as HTMLSpanElement;
     const historyListEl = document.getElementById("history-list") as HTMLUListElement;
+    const autocompleteListEl = document.getElementById("autocomplete-list") as HTMLUListElement;
+    const toggleEl = document.getElementById("autocomplete-toggle") as HTMLInputElement;
 
     // Start initialization process immediately when DOM is ready
-    initializeApp(statusEl, inputEl, addBtn).catch(console.error);
+    initializeApp(statusEl, inputEl, addBtn, toggleEl).catch(console.error);
 
     function renderState() {
         scoreEl.textContent = gameState.score.toString();
@@ -290,6 +293,8 @@ document.addEventListener("DOMContentLoaded", () => {
         const text = inputEl.value;
         if (!text.trim()) return;
         
+        autocompleteListEl.style.display = 'none';
+        
         inputEl.disabled = true;
         addBtn.disabled = true;
 
@@ -308,6 +313,59 @@ document.addEventListener("DOMContentLoaded", () => {
     inputEl.addEventListener("keypress", (e) => {
         if (e.key === "Enter") {
             handleAdd();
+        }
+    });
+
+    toggleEl.addEventListener("change", () => {
+        if (!toggleEl.checked) {
+            autocompleteListEl.style.display = 'none';
+        } else if (inputEl.value.trim()) {
+            inputEl.dispatchEvent(new Event('input'));
+        }
+    });
+
+    inputEl.addEventListener("input", () => {
+        if (!toggleEl.checked) {
+            autocompleteListEl.style.display = 'none';
+            return;
+        }
+
+        const value = inputEl.value;
+        if (!value.trim()) {
+            autocompleteListEl.style.display = 'none';
+            return;
+        }
+
+        const ftResults = flexSearch.search(value, 5);
+        let matchedIds: string[] = [];
+        if (ftResults.length > 0 && ftResults[0].result.length > 0) {
+            matchedIds = ftResults[0].result;
+        }
+
+        const suggestions = matchedIds.map(id => situations.find(s => s.id.toString() === id.toString())).filter(Boolean) as Situation[];
+
+        if (suggestions.length > 0) {
+            autocompleteListEl.innerHTML = '';
+            suggestions.forEach(suggestion => {
+                const li = document.createElement('li');
+                li.textContent = suggestion.name;
+                li.addEventListener('mousedown', (e) => {
+                    e.preventDefault(); // Prevent input blur
+                    inputEl.value = suggestion.name;
+                    autocompleteListEl.style.display = 'none';
+                    inputEl.focus();
+                });
+                autocompleteListEl.appendChild(li);
+            });
+            autocompleteListEl.style.display = 'block';
+        } else {
+            autocompleteListEl.style.display = 'none';
+        }
+    });
+
+    document.addEventListener("click", (e) => {
+        if (e.target !== inputEl && e.target !== autocompleteListEl) {
+            autocompleteListEl.style.display = 'none';
         }
     });
 

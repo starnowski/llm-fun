@@ -48976,7 +48976,7 @@ ${t2}`);
     });
     return db;
   }
-  async function initializeApp(statusEl, inputEl, addBtn) {
+  async function initializeApp(statusEl, inputEl, addBtn, toggleEl) {
     if (statusEl) statusEl.textContent = "Trwa \u0142adowanie modelu AI (Transformers.js)...";
     extractor = await pipeline("feature-extraction", "Xenova/paraphrase-multilingual-MiniLM-L12-v2", {
       quantized: true
@@ -49015,6 +49015,7 @@ ${t2}`);
     }
     if (inputEl) inputEl.disabled = false;
     if (addBtn) addBtn.disabled = false;
+    if (toggleEl) toggleEl.disabled = false;
   }
   var GameState = class {
     score = 0;
@@ -49099,7 +49100,9 @@ ${t2}`);
     const resetBtn = document.getElementById("reset-btn");
     const scoreEl = document.getElementById("total-score");
     const historyListEl = document.getElementById("history-list");
-    initializeApp(statusEl, inputEl, addBtn).catch(console.error);
+    const autocompleteListEl = document.getElementById("autocomplete-list");
+    const toggleEl = document.getElementById("autocomplete-toggle");
+    initializeApp(statusEl, inputEl, addBtn, toggleEl).catch(console.error);
     function renderState() {
       scoreEl.textContent = gameState.score.toString();
       historyListEl.innerHTML = "";
@@ -49119,6 +49122,7 @@ ${t2}`);
     async function handleAdd() {
       const text = inputEl.value;
       if (!text.trim()) return;
+      autocompleteListEl.style.display = "none";
       inputEl.disabled = true;
       addBtn.disabled = true;
       await processInput(text);
@@ -49132,6 +49136,52 @@ ${t2}`);
     inputEl.addEventListener("keypress", (e) => {
       if (e.key === "Enter") {
         handleAdd();
+      }
+    });
+    toggleEl.addEventListener("change", () => {
+      if (!toggleEl.checked) {
+        autocompleteListEl.style.display = "none";
+      } else if (inputEl.value.trim()) {
+        inputEl.dispatchEvent(new Event("input"));
+      }
+    });
+    inputEl.addEventListener("input", () => {
+      if (!toggleEl.checked) {
+        autocompleteListEl.style.display = "none";
+        return;
+      }
+      const value = inputEl.value;
+      if (!value.trim()) {
+        autocompleteListEl.style.display = "none";
+        return;
+      }
+      const ftResults = flexSearch.search(value, 5);
+      let matchedIds = [];
+      if (ftResults.length > 0 && ftResults[0].result.length > 0) {
+        matchedIds = ftResults[0].result;
+      }
+      const suggestions = matchedIds.map((id) => situations.find((s) => s.id.toString() === id.toString())).filter(Boolean);
+      if (suggestions.length > 0) {
+        autocompleteListEl.innerHTML = "";
+        suggestions.forEach((suggestion) => {
+          const li = document.createElement("li");
+          li.textContent = suggestion.name;
+          li.addEventListener("mousedown", (e) => {
+            e.preventDefault();
+            inputEl.value = suggestion.name;
+            autocompleteListEl.style.display = "none";
+            inputEl.focus();
+          });
+          autocompleteListEl.appendChild(li);
+        });
+        autocompleteListEl.style.display = "block";
+      } else {
+        autocompleteListEl.style.display = "none";
+      }
+    });
+    document.addEventListener("click", (e) => {
+      if (e.target !== inputEl && e.target !== autocompleteListEl) {
+        autocompleteListEl.style.display = "none";
       }
     });
     resetBtn.addEventListener("click", () => {
