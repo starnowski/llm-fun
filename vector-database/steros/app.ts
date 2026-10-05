@@ -1,3 +1,8 @@
+import { pipeline } from '@xenova/transformers';
+import { createRxDatabase } from 'rxdb';
+import { getRxStorageDexie } from 'rxdb/plugins/storage-dexie';
+import { Document } from 'flexsearch';
+
 interface Situation {
     id: number;
     name: string;
@@ -50,6 +55,100 @@ const situations: Situation[] = [
     { id: 43, name: "Urlop / wakacje", points: 13 }
 ];
 
+// --- Database & AI Setup (Step 2) ---
+
+export let db: any;
+export let extractor: any;
+export let flexSearch: any;
+
+async function initDB() {
+    db = await createRxDatabase({
+        name: 'sterosdb',
+        storage: getRxStorageDexie()
+    });
+
+    await db.addCollections({
+        situations: {
+            schema: {
+                version: 0,
+                primaryKey: 'id',
+                type: 'object',
+                properties: {
+                    id: { type: 'string', maxLength: 100 },
+                    name: { type: 'string' },
+                    points: { type: 'number' },
+                    embedding: {
+                        type: 'array',
+                        items: { type: 'number' }
+                    }
+                },
+                required: ['id', 'name', 'points', 'embedding']
+            }
+        }
+    });
+
+    return db;
+}
+
+async function initializeApp(statusEl: HTMLElement, inputEl: HTMLInputElement, addBtn: HTMLButtonElement, toggleEl?: HTMLInputElement) {
+    if (statusEl) statusEl.textContent = 'Trwa ładowanie modelu AI (Transformers.js)...';
+
+    // 1. Load the model
+    // Using a fast, small multilingual model
+    extractor = await pipeline('feature-extraction', 'Xenova/paraphrase-multilingual-MiniLM-L12-v2', {
+        quantized: true,
+    });
+
+    if (statusEl) statusEl.textContent = 'Inicjalizacja lokalnej bazy danych (RxDB)...';
+
+    // 2. Load RxDB
+    await initDB();
+
+    flexSearch = new Document({
+        tokenize: 'forward',
+        document: {
+            id: 'id',
+            index: ['name']
+        }
+    });
+
+    // 3. Populate Database if empty
+    const existingCount = await db.situations.find().exec();
+    if (existingCount.length === 0) {
+        if (statusEl) statusEl.textContent = 'Generowanie wektorów dla sytuacji stresowych...';
+        
+        for (const sit of situations) {
+            const output = await extractor(sit.name, { pooling: 'mean', normalize: true });
+            const embedding = Array.from(output.data);
+            
+            await db.situations.insert({
+                id: sit.id.toString(),
+                name: sit.name,
+                points: sit.points,
+                embedding: embedding
+            });
+        }
+    }
+
+    if (statusEl) statusEl.textContent = 'Indeksowanie bazy full-text (FlexSearch)...';
+
+    // 4. Populate FlexSearch from RxDB documents
+    const allDocs = await db.situations.find().exec();
+    for (const doc of allDocs) {
+        flexSearch.add({ id: doc.id, name: doc.name });
+    }
+
+    if (statusEl) {
+        statusEl.textContent = 'Wszystkie sytuacje zostały zapisane w bazie danych!';
+        statusEl.style.color = '#28a745';
+    }
+    
+    // Enable inputs
+    if (inputEl) inputEl.disabled = false;
+    if (addBtn) addBtn.disabled = false;
+    if (toggleEl) toggleEl.disabled = false;
+}
+
 // --- Core Logic ---
 
 interface Attempt {
@@ -65,9 +164,6 @@ class GameState {
 
     public addAttempt(input: string, situation?: Situation) {
         if (situation) {
-            // If already matched, we still record the attempt but maybe award 0 points to prevent spam?
-            // For simplicity, we just award points every time they match, as the goal didn't specify.
-            // Let's only award points if not already matched to make it a better game.
             let points = 0;
             if (!this.matchedIds.has(situation.id)) {
                 points = situation.points;
@@ -89,51 +185,95 @@ class GameState {
 
 const gameState = new GameState();
 
-// Utility function to normalize strings for comparison (lowercase + remove diacritics)
-function normalizeString(str: string): string {
-    return str
-        .trim()
-        .toLowerCase()
-        // Replace polish diacritics for easier matching
-        .replace(/ą/g, 'a')
-        .replace(/ć/g, 'c')
-        .replace(/ę/g, 'e')
-        .replace(/ł/g, 'l')
-        .replace(/ń/g, 'n')
-        .replace(/ó/g, 'o')
-        .replace(/ś/g, 's')
-        .replace(/ź/g, 'z')
-        .replace(/ż/g, 'z')
-        // Remove spaces and non-alphanumeric characters for even more robust matching
-        // so "urlop / wakacje" matches "urlopwakacje" and "urlop wakacje"
-        .replace(/[^\w]/gi, '');
+
+function cosineSimilarity(a: number[], b: number[]): number {
+    let dotProduct = 0;
+    let normA = 0;
+    let normB = 0;
+    for (let i = 0; i < a.length; i++) {
+        dotProduct += a[i] * b[i];
+        normA += a[i] * a[i];
+        normB += b[i] * b[i];
+    }
+    if (normA === 0 || normB === 0) return 0;
+    return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
-function processInput(input: string): Attempt {
-    const normalizedInput = normalizeString(input);
+async function processInput(input: string): Promise<Attempt> {
+    // 1. Full-text Search (Keyword Match)
+    const ftResults = flexSearch.search(input, 1);
+    let ftMatchedId = null;
+    if (ftResults.length > 0 && ftResults[0].result.length > 0) {
+        ftMatchedId = ftResults[0].result[0];
+    }
+
+    // Fetch all situations
+    const docs = await db.situations.find().exec();
     
-    // Find a match
-    const match = situations.find(s => normalizeString(s.name) === normalizedInput);
-    
-    gameState.addAttempt(input, match);
+    let matchedDoc = null;
+
+    if (ftMatchedId) {
+        // Prioritize exact/keyword match
+        matchedDoc = docs.find((d: any) => d.id === ftMatchedId);
+    }
+
+    // 2. Vector Search (Semantic Fallback)
+    if (!matchedDoc) {
+        // Generate embedding for user input
+        const output = await extractor(input, { pooling: 'mean', normalize: true });
+        const inputEmbedding = Array.from(output.data) as number[];
+
+        let bestMatch = null;
+        let highestScore = -1;
+
+        for (const doc of docs) {
+            const score = cosineSimilarity(inputEmbedding, doc.embedding);
+            if (score > highestScore) {
+                highestScore = score;
+                bestMatch = doc;
+            }
+        }
+
+        const THRESHOLD = 0.85; // Similarity threshold
+
+        if (bestMatch && highestScore >= THRESHOLD) {
+            matchedDoc = bestMatch;
+        }
+    }
+
+    if (matchedDoc) {
+        const matchedSituation: Situation = {
+            id: parseInt(matchedDoc.id),
+            name: matchedDoc.name,
+            points: matchedDoc.points
+        };
+        gameState.addAttempt(input, matchedSituation);
+    } else {
+        gameState.addAttempt(input, undefined);
+    }
+
     return gameState.attempts[gameState.attempts.length - 1];
 }
 
 // --- DOM Manipulation ---
 
 document.addEventListener("DOMContentLoaded", () => {
+    const statusEl = document.getElementById("db-status") as HTMLElement;
     const inputEl = document.getElementById("situation-input") as HTMLInputElement;
     const addBtn = document.getElementById("add-btn") as HTMLButtonElement;
     const resetBtn = document.getElementById("reset-btn") as HTMLButtonElement;
     const scoreEl = document.getElementById("total-score") as HTMLSpanElement;
     const historyListEl = document.getElementById("history-list") as HTMLUListElement;
+    const autocompleteListEl = document.getElementById("autocomplete-list") as HTMLUListElement;
+    const toggleEl = document.getElementById("autocomplete-toggle") as HTMLInputElement;
+
+    // Start initialization process immediately when DOM is ready
+    initializeApp(statusEl, inputEl, addBtn, toggleEl).catch(console.error);
 
     function renderState() {
         scoreEl.textContent = gameState.score.toString();
         
         historyListEl.innerHTML = "";
-        
-        // Render from newest to oldest for better UX
         const reversedAttempts = [...gameState.attempts].reverse();
         
         reversedAttempts.forEach(attempt => {
@@ -149,12 +289,22 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    function handleAdd() {
+    async function handleAdd() {
         const text = inputEl.value;
         if (!text.trim()) return;
         
-        processInput(text);
+        autocompleteListEl.style.display = 'none';
+        
+        inputEl.disabled = true;
+        addBtn.disabled = true;
+
+        await processInput(text);
+        
         inputEl.value = "";
+        inputEl.disabled = false;
+        addBtn.disabled = false;
+        inputEl.focus();
+        
         renderState();
     }
 
@@ -163,6 +313,59 @@ document.addEventListener("DOMContentLoaded", () => {
     inputEl.addEventListener("keypress", (e) => {
         if (e.key === "Enter") {
             handleAdd();
+        }
+    });
+
+    toggleEl.addEventListener("change", () => {
+        if (!toggleEl.checked) {
+            autocompleteListEl.style.display = 'none';
+        } else if (inputEl.value.trim()) {
+            inputEl.dispatchEvent(new Event('input'));
+        }
+    });
+
+    inputEl.addEventListener("input", () => {
+        if (!toggleEl.checked) {
+            autocompleteListEl.style.display = 'none';
+            return;
+        }
+
+        const value = inputEl.value;
+        if (!value.trim()) {
+            autocompleteListEl.style.display = 'none';
+            return;
+        }
+
+        const ftResults = flexSearch.search(value, 5);
+        let matchedIds: string[] = [];
+        if (ftResults.length > 0 && ftResults[0].result.length > 0) {
+            matchedIds = ftResults[0].result;
+        }
+
+        const suggestions = matchedIds.map(id => situations.find(s => s.id.toString() === id.toString())).filter(Boolean) as Situation[];
+
+        if (suggestions.length > 0) {
+            autocompleteListEl.innerHTML = '';
+            suggestions.forEach(suggestion => {
+                const li = document.createElement('li');
+                li.textContent = suggestion.name;
+                li.addEventListener('mousedown', (e) => {
+                    e.preventDefault(); // Prevent input blur
+                    inputEl.value = suggestion.name;
+                    autocompleteListEl.style.display = 'none';
+                    inputEl.focus();
+                });
+                autocompleteListEl.appendChild(li);
+            });
+            autocompleteListEl.style.display = 'block';
+        } else {
+            autocompleteListEl.style.display = 'none';
+        }
+    });
+
+    document.addEventListener("click", (e) => {
+        if (e.target !== inputEl && e.target !== autocompleteListEl) {
+            autocompleteListEl.style.display = 'none';
         }
     });
 
